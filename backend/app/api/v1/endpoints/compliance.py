@@ -2,12 +2,15 @@
 Compliance checking endpoints.
 """
 from typing import Dict, Any, List
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from app.db.session import get_db
+from app.services.compliance_engine import compliance_engine
+from app.services.vector_service import vector_service
 
 router = APIRouter()
 
@@ -64,55 +67,89 @@ async def check_compliance(
     Check building element compliance against Czech building codes.
 
     This is the main endpoint that the Revit plugin calls for real-time compliance checking.
+    Uses RAG pipeline with Pinecone + OpenAI for intelligent compliance checking.
     """
     logger.info(f"Compliance check requested for {request.element_type}")
 
-    # TODO: Implement RAG-based compliance checking
-    # For now, return a mock response based on hardcoded rules
+    try:
+        # Convert Pydantic models to dicts
+        properties = request.properties.model_dump()
+        context = request.context.model_dump() if request.context else {}
 
-    violations = []
+        # Run compliance check through RAG pipeline
+        result = await compliance_engine.check_compliance(
+            element_type=request.element_type,
+            properties=properties,
+            context=context
+        )
 
-    # Example: Check corridor width (ČSN 73 0802)
-    if request.element_type.lower() in ["wall", "corridor"]:
-        if request.context and request.context.room_type == "Corridor":
-            min_width = 1200  # mm
-            if request.context.occupancy and request.context.occupancy > 200:
-                min_width = 1500
-
-            actual_width = request.properties.width_mm
-
-            if actual_width < min_width:
-                violations.append(
-                    ComplianceViolation(
-                        rule_id="ČSN_73_0802_Sec_5.2.a",
-                        severity="critical",
-                        message=f"Corridor width ({actual_width}mm) is less than minimum {min_width}mm required by ČSN 73 0802",
-                        required_value=min_width,
-                        actual_value=actual_width,
-                        code_reference="Section 5.2(a) - Escape Routes",
-                        confidence_score=0.98,
-                    )
-                )
-
-    from datetime import datetime
-
-    return ComplianceCheckResponse(
-        compliant=len(violations) == 0,
-        violations=violations,
-        recommendations=[
-            f"Increase {request.element_type.lower()} spacing to meet minimum requirements"
+        # Convert violations to Pydantic models
+        violations = [
+            ComplianceViolation(
+                rule_id=v["rule_id"],
+                severity=v["severity"],
+                message=v["message"],
+                required_value=v.get("required_value"),
+                actual_value=v.get("actual_value"),
+                code_reference=v.get("csn_reference"),
+                confidence_score=v["confidence_score"],
+            )
+            for v in result["violations"]
         ]
-        if violations
-        else [],
-        checked_at=datetime.utcnow().isoformat() + "Z",
-    )
+
+        logger.info(
+            f"✓ Compliance check complete: {len(violations)} violations, "
+            f"{result['execution_time_ms']:.1f}ms"
+        )
+
+        return ComplianceCheckResponse(
+            compliant=result["compliant"],
+            violations=violations,
+            recommendations=result["recommendations"],
+            checked_at=datetime.utcnow().isoformat() + "Z",
+        )
+
+    except Exception as e:
+        logger.error(f"Compliance check failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Compliance check failed: {str(e)}"
+        )
 
 
 @router.get("/rules")
 async def list_rules():
-    """List available compliance rules (placeholder)."""
-    return {
-        "total_rules": 0,
-        "rules": [],
-        "message": "RAG pipeline not yet configured. Run document ingestion first.",
-    }
+    """Get information about loaded compliance rules."""
+    try:
+        stats = await vector_service.get_stats()
+
+        return {
+            "total_rules": stats.get("total_vectors", 0),
+            "index_name": vector_service.index_name,
+            "dimension": stats.get("dimension", 1536),
+            "namespaces": stats.get("namespaces", {}),
+            "queries_executed": stats.get("queries_executed", 0),
+            "message": "RAG pipeline active" if stats.get("total_vectors", 0) > 0 else "No rules loaded. Run document ingestion first.",
+        }
+    except Exception as e:
+        logger.error(f"Failed to get rules stats: {e}")
+        return {
+            "total_rules": 0,
+            "message": f"Error accessing vector database: {str(e)}",
+        }
+
+
+@router.get("/stats")
+async def get_stats():
+    """Get compliance engine statistics."""
+    try:
+        engine_stats = compliance_engine.get_stats()
+        vector_stats = await vector_service.get_stats()
+
+        return {
+            "compliance_engine": engine_stats,
+            "vector_database": vector_stats,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

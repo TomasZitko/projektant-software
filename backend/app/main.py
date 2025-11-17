@@ -10,6 +10,7 @@ from loguru import logger
 from app.config import settings
 from app.core.logging import setup_logging
 from app.api.v1.api import api_router
+from app.services.compliance_engine import compliance_engine
 
 
 @asynccontextmanager
@@ -21,10 +22,23 @@ async def lifespan(app: FastAPI):
     logger.info(f"Debug mode: {settings.DEBUG}")
     logger.info(f"Database: {settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}")
 
+    # Initialize RAG pipeline
+    try:
+        logger.info("Initializing RAG pipeline...")
+        await compliance_engine.initialize()
+        logger.info("✓ RAG pipeline ready")
+    except Exception as e:
+        logger.error(f"✗ Failed to initialize RAG pipeline: {e}")
+        logger.warning("Application will start but compliance checking may not work")
+
     yield
 
     # Shutdown
     logger.info("Shutting down application")
+    try:
+        await compliance_engine.shutdown()
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
 
 
 # Create FastAPI application
