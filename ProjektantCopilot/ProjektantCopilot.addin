@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>ProjektantCopilot</Name>
+    <Assembly>ProjektantCopilot.dll</Assembly>
+    <AddInId>B8E7F8D0-5A1E-4C9F-9D3E-1A2B3C4D5E6F</AddInId>
+    <FullClassName>ProjektantCopilot.App</FullClassName>
+    <VendorId>PROJEKTANT</VendorId>
+    <VendorDescription>Projektant Software, https://projektant.io</VendorDescription>
+    <Text>ProjektantCopilot - Building Code Compliance Monitor</Text>
+    <Description>Real-time building code compliance monitoring for Revit. Automatically checks walls, doors, windows, floors, and ceilings against building regulations.</Description>
+    <VisibilityMode>AlwaysVisible</VisibilityMode>
+  </AddIn>
+</RevitAddIns>
