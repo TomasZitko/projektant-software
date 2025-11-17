@@ -10,6 +10,9 @@ from loguru import logger
 from app.config import settings
 from app.core.logging import setup_logging
 from app.api.v1.api import api_router
+from app.services.cache import cache_service
+from app.services.metrics import metrics_collector
+from app.middleware.rate_limit import RateLimitMiddleware
 
 
 @asynccontextmanager
@@ -21,10 +24,17 @@ async def lifespan(app: FastAPI):
     logger.info(f"Debug mode: {settings.DEBUG}")
     logger.info(f"Database: {settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}")
 
+    # Initialize Redis cache
+    await cache_service.connect()
+
+    # Reset metrics on startup
+    metrics_collector.reset_stats()
+
     yield
 
     # Shutdown
     logger.info("Shutting down application")
+    await cache_service.disconnect()
 
 
 # Create FastAPI application
@@ -46,6 +56,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting middleware
+app.add_middleware(RateLimitMiddleware, enabled=not settings.DEBUG)
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
@@ -73,6 +86,18 @@ async def health_check():
             "version": settings.APP_VERSION,
         },
     )
+
+
+@app.get("/metrics", tags=["Monitoring"])
+async def get_metrics():
+    """Get performance metrics for all endpoints."""
+    return metrics_collector.get_all_stats()
+
+
+@app.get("/metrics/errors", tags=["Monitoring"])
+async def get_recent_errors():
+    """Get recent error metrics."""
+    return {"errors": metrics_collector.get_recent_errors(limit=20)}
 
 
 if __name__ == "__main__":
