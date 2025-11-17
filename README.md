@@ -10,6 +10,8 @@
 
 Projektant Copilot is an AI-powered Revit plugin that checks building code compliance **in real-time** as you design. No more manual code review. No more compliance violations discovered late in the project. Just instant, intelligent feedback powered by RAG (Retrieval Augmented Generation) and Czech building codes (ČSN standards).
 
+> 🔥 **[→ 60-SECOND QUICKSTART GUIDE ←](QUICKSTART.md)** - Get running NOW!
+
 **Key Features:**
 - ⚡ **Real-time compliance checking** as you model in Revit
 - 🧠 **RAG-powered** intelligent code interpretation
